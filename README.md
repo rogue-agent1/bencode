@@ -1,11 +1,11 @@
 # bencode
 
-bencode - BitTorrent bencoding encoder and decoder.
+bencode: BitTorrent bencoding encoder/decoder.
+
+Single-file, zero-dependency Python CLI.
 
 ## Usage
 
 ```bash
-python3 bencode.py --test
+python3 bencode.py test
 ```
-
-Zero dependencies. Python 3.8+.

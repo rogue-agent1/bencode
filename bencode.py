@@ -1,57 +1,68 @@
 #!/usr/bin/env python3
-"""bencode - BitTorrent bencoding encoder and decoder."""
+"""bencode: BitTorrent bencoding encoder/decoder."""
 import sys
 
-def encode(val):
-    if isinstance(val, int): return f"i{val}e".encode()
-    if isinstance(val, bytes): return f"{len(val)}:".encode() + val
-    if isinstance(val, str): return encode(val.encode())
-    if isinstance(val, list): return b"l" + b"".join(encode(v) for v in val) + b"e"
-    if isinstance(val, dict):
-        items = sorted(val.items(), key=lambda x: x[0] if isinstance(x[0], bytes) else x[0].encode())
+def encode(obj):
+    if isinstance(obj, int):
+        return f"i{obj}e".encode()
+    if isinstance(obj, bytes):
+        return f"{len(obj)}:".encode() + obj
+    if isinstance(obj, str):
+        b = obj.encode()
+        return f"{len(b)}:".encode() + b
+    if isinstance(obj, list):
+        return b"l" + b"".join(encode(i) for i in obj) + b"e"
+    if isinstance(obj, dict):
+        items = sorted(obj.items(), key=lambda x: x[0].encode() if isinstance(x[0], str) else x[0])
         return b"d" + b"".join(encode(k) + encode(v) for k, v in items) + b"e"
-    raise TypeError(f"Cannot encode {type(val)}")
+    raise TypeError(f"Cannot encode {type(obj)}")
 
-def decode(data):
-    if isinstance(data, str): data = data.encode()
-    val, _ = _decode(data, 0)
-    return val
-
-def _decode(data, i):
-    if data[i:i+1] == b"i":
-        end = data.index(b"e", i)
-        return int(data[i+1:end]), end + 1
-    if data[i:i+1] == b"l":
-        lst, i = [], i + 1
-        while data[i:i+1] != b"e":
-            val, i = _decode(data, i)
-            lst.append(val)
-        return lst, i + 1
-    if data[i:i+1] == b"d":
-        d, i = {}, i + 1
-        while data[i:i+1] != b"e":
-            key, i = _decode(data, i)
-            val, i = _decode(data, i)
-            d[key] = val
-        return d, i + 1
-    colon = data.index(b":", i)
-    n = int(data[i:colon])
-    s = data[colon+1:colon+1+n]
-    return s, colon + 1 + n
+def decode(data, idx=0):
+    if data[idx:idx+1] == b"i":
+        end = data.index(b"e", idx)
+        return int(data[idx+1:end]), end + 1
+    if data[idx:idx+1] == b"l":
+        result, idx = [], idx + 1
+        while data[idx:idx+1] != b"e":
+            val, idx = decode(data, idx)
+            result.append(val)
+        return result, idx + 1
+    if data[idx:idx+1] == b"d":
+        result, idx = {}, idx + 1
+        while data[idx:idx+1] != b"e":
+            key, idx = decode(data, idx)
+            val, idx = decode(data, idx)
+            result[key] = val
+        return result, idx + 1
+    colon = data.index(b":", idx)
+    length = int(data[idx:colon])
+    start = colon + 1
+    return data[start:start+length], start + length
 
 def test():
+    # Integers
     assert encode(42) == b"i42e"
-    assert encode("hello") == b"5:hello"
-    assert encode([1, "two"]) == b"li1e3:twoe"
-    assert encode({"a": 1, "b": 2}) == b"d1:ai1e1:bi2ee"
-    assert decode(b"i42e") == 42
-    assert decode(b"5:hello") == b"hello"
-    assert decode(b"li1e3:twoe") == [1, b"two"]
-    d = decode(b"d1:ai1e1:bi2ee")
-    assert d[b"a"] == 1
-    roundtrip = decode(encode({"key": [1, 2, 3]}))
-    assert roundtrip[b"key"] == [1, 2, 3]
-    print("bencode: all tests passed")
+    assert encode(-3) == b"i-3e"
+    assert decode(b"i42e")[0] == 42
+    # Strings
+    assert encode("spam") == b"4:spam"
+    assert decode(b"4:spam")[0] == b"spam"
+    # Lists
+    assert encode(["spam", 42]) == b"l4:spami42ee"
+    val, _ = decode(b"l4:spami42ee")
+    assert val == [b"spam", 42]
+    # Dicts
+    enc = encode({"cow": "moo", "age": 3})
+    val, _ = decode(enc)
+    assert val[b"age"] == 3
+    assert val[b"cow"] == b"moo"
+    # Roundtrip
+    obj = {"info": {"name": "test", "length": 1024}, "announce": "http://tracker"}
+    data = encode(obj)
+    decoded, _ = decode(data)
+    assert decoded[b"announce"] == b"http://tracker"
+    print("All tests passed!")
 
 if __name__ == "__main__":
-    test() if "--test" in sys.argv else print("Usage: bencode.py --test")
+    if len(sys.argv) > 1 and sys.argv[1] == "test": test()
+    else: print("Usage: bencode.py test")
